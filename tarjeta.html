@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tarjeta de Fidelidad Digital</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .glass-card {
+            background: rgba(30, 41, 59, 0.6);
+            backdrop-filter: blur(15px);
+            -webkit-backdrop-filter: blur(15px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .stamp-unearned { opacity: 0.3; filter: grayscale(100%); }
+        .stamp { transition: all 0.3s ease-in-out; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        .modal { transition: opacity 0.3s ease; }
+
+        .spinner {
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: #fff;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        input[type=number]::-webkit-inner-spin-button, 
+        input[type=number]::-webkit-outer-spin-button { 
+          -webkit-appearance: none; 
+          margin: 0; 
+        }
+        input[type=number] { -moz-appearance: textfield; }
+
+        .shake {
+            animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both;
+        }
+        @keyframes shake {
+          10%, 90% { transform: translate3d(-1px, 0, 0); }
+          20%, 80% { transform: translate3d(2px, 0, 0); }
+          30%, 50%, 70% { transform: translate3d(-4px, 0, 0); }
+          40%, 60% { transform: translate3d(4px, 0, 0); }
+        }
+    </style>
+</head>
+<body class="bg-gray-900 min-h-screen flex items-center justify-center p-4 bg-cover bg-center transition-all duration-500">
+
+    <div id="loading-screen" class="w-full max-w-sm mx-auto text-center text-white">
+        <div class="spinner mx-auto"></div>
+        <p id="loading-message" class="mt-4">Cargando configuración del negocio...</p>
+    </div>
+
+    <div id="login-screen" class="w-full max-w-sm mx-auto transition-opacity duration-500 ease-in-out hidden">
+        <div class="glass-card rounded-3xl shadow-2xl text-white p-8 text-center">
+            <h2 class="text-2xl font-bold mb-2">Acceso de Personal</h2>
+            <p class="text-gray-300 mb-6">Introduce tu PIN de 4 dígitos</p>
+            <div id="pin-inputs" class="flex justify-center gap-3 sm:gap-4 mb-4">
+                <input type="password" inputmode="numeric" pattern="[0-9]*" maxlength="1" class="pin-input w-12 h-14 sm:w-14 sm:h-16 text-3xl text-center bg-white/10 rounded-xl focus:ring-2 focus:outline-none">
+                <input type="password" inputmode="numeric" pattern="[0-9]*" maxlength="1" class="pin-input w-12 h-14 sm:w-14 sm:h-16 text-3xl text-center bg-white/10 rounded-xl focus:ring-2 focus:outline-none">
+                <input type="password" inputmode="numeric" pattern="[0-9]*" maxlength="1" class="pin-input w-12 h-14 sm:w-14 sm:h-16 text-3xl text-center bg-white/10 rounded-xl focus:ring-2 focus:outline-none">
+                <input type="password" inputmode="numeric" pattern="[0-9]*" maxlength="1" class="pin-input w-12 h-14 sm:w-14 sm:h-16 text-3xl text-center bg-white/10 rounded-xl focus:ring-2 focus:outline-none">
+            </div>
+            <p id="login-error" class="text-red-400 h-5"></p>
+        </div>
+    </div>
+
+    <main id="main-content" class="w-full max-w-sm mx-auto hidden transition-opacity duration-500 ease-in-out opacity-0">
+        <div id="loyalty-card" class="glass-card rounded-3xl shadow-2xl text-white overflow-hidden p-6 md:p-8 relative">
+            <div id="initial-loading" class="absolute inset-0 bg-black bg-opacity-60 flex flex-col items-center justify-center z-20">
+                <div class="spinner"></div>
+                <p id="initial-loading-message" class="mt-4 text-white">Verificando cliente...</p>
+            </div>
+            <div class="flex justify-between items-center mb-6">
+                <h1 id="card-title" class="text-xl sm:text-2xl font-bold text-gray-100 whitespace-nowrap">Estampillas</h1>
+                <span id="points-counter" class="text-lg font-bold ml-3"></span>
+            </div>
+            <div id="stamps-grid" class="grid gap-4 mb-6"></div>
+            <div class="mb-6">
+                <p id="name-label" class="text-sm">Nombre:</p>
+                <p id="customer-name" class="text-2xl sm:text-3xl font-bold text-gray-50"></p>
+            </div>
+            <div class="flex flex-col items-center">
+                <div class="bg-white p-2 rounded-lg">
+                    <img id="qr-code-img" src="" alt="Código QR" class="w-28 h-28 sm:w-36 sm:h-36">
+                </div>
+                <p id="pid-number" class="mt-3 text-base sm:text-lg font-mono tracking-widest text-gray-300"></p>
+            </div>
+            <div class="absolute bottom-4 right-4 text-gray-400">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+            </div>
+        </div>
+        <div class="mt-8 flex items-stretch justify-center gap-2">
+            <input type="number" id="custom-points-input" placeholder="Cant." class="w-20 text-center bg-white/10 text-white border border-white/20 rounded-xl focus:ring-2 focus:outline-none">
+            <button id="add-custom-points-btn" class="text-white font-bold py-3 px-6 rounded-xl shadow-lg transition-transform transform hover:scale-105">Añadir</button>
+        </div>
+        <div class="flex justify-center gap-4 mt-4">
+            <button id="add-point-btn" class="bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-6 rounded-xl shadow-lg transition-transform transform hover:scale-105">Añadir 1 Punto</button>
+            <button id="remove-point-btn" class="bg-red-500 hover:bg-red-600 text-white font-bold py-3 px-6 rounded-xl shadow-lg transition-transform transform hover:scale-105">Quitar 1 Punto</button>
+        </div>
+    </main>
+
+    <!-- Modales -->
+    <div id="notification-modal" class="modal fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-30 opacity-0 pointer-events-none">
+        <div class="bg-white rounded-lg p-6 shadow-xl text-center">
+            <p id="notification-message" class="text-gray-800"></p>
+        </div>
+    </div>
+    <div id="loading-modal" class="modal fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-40 opacity-0 pointer-events-none">
+        <div class="glass-card rounded-2xl p-8">
+            <div class="spinner"></div>
+        </div>
+    </div>
+
+    <!-- Firebase SDK -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyB_saB4ac0Vks7fmnuAeqEohsh64F2P1Rw",
+            authDomain: "bd-paginas-scaner-smartpasses.firebaseapp.com",
+            projectId: "bd-paginas-scaner-smartpasses",
+            storageBucket: "bd-paginas-scaner-smartpasses.firebasestorage.app",
+            messagingSenderId: "481910580797",
+            appId: "1:481910580797:web:7782eadb69dab794b26c54"
+        };
+        const appId = 'smart-passes-loyalty-app'; 
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+
+        let businessConfig = {};
+        let customersPromise;
+        let customerId = null;
+        let currentStamps = 0;
+        let totalStamps = 8;
+
+        const loadingScreen = document.getElementById('loading-screen');
+        const loadingMessage = document.getElementById('loading-message');
+        const loginScreen = document.getElementById('login-screen');
+        const mainContent = document.getElementById('main-content');
+        const pinInputsContainer = document.getElementById('pin-inputs');
+        const pinInputs = [...pinInputsContainer.querySelectorAll('.pin-input')];
+        const loginError = document.getElementById('login-error');
+        const stampsGrid = document.getElementById('stamps-grid');
+        const addPointBtn = document.getElementById('add-point-btn');
+        const removePointBtn = document.getElementById('remove-point-btn');
+        const customerNameEl = document.getElementById('customer-name');
+        const pidNumberEl = document.getElementById('pid-number');
+        const qrCodeImgEl = document.getElementById('qr-code-img');
+        const notificationModal = document.getElementById('notification-modal');
+        const notificationMessage = document.getElementById('notification-message');
+        const loadingModal = document.getElementById('loading-modal');
+        const initialLoadingEl = document.getElementById('initial-loading');
+        const initialLoadingMessageEl = document.getElementById('initial-loading-message');
+        const pointsCounterEl = document.getElementById('points-counter');
+        const customPointsInput = document.getElementById('custom-points-input');
+        const addCustomPointsBtn = document.getElementById('add-custom-points-btn');
+        const nameLabel = document.getElementById('name-label');
+        const cardTitleEl = document.getElementById('card-title');
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            const urlParams = new URLSearchParams(window.location.search);
+            const businessId = urlParams.get('businessId');
+
+            if (!businessId) {
+                loadingMessage.textContent = "Error: Falta el ID del negocio en la URL.";
+                return;
+            }
+
+            try {
+                await signInAnonymously(auth);
+                const businessDocRef = doc(db, `/artifacts/${appId}/public/data/businesses`, businessId);
+                const businessDocSnap = await getDoc(businessDocRef);
+
+                if (!businessDocSnap.exists()) {
+                    throw new Error("El negocio especificado no existe.");
+                }
+                businessConfig = businessDocSnap.data();
+                totalStamps = businessConfig.totalStamps || 8;
+
+                applyTheme(businessConfig);
+                customersPromise = prefetchCustomers(businessConfig.apiKey, businessConfig.programId);
+
+                loadingScreen.classList.add('hidden');
+                loginScreen.classList.remove('hidden');
+                pinInputs[0].focus();
+
+            } catch (error) {
+                loadingMessage.textContent = `Error: ${error.message}`;
+                console.error(error);
+            }
+        });
+
+        function applyTheme(config) {
+            const theme = config.theme;
+            document.body.style.backgroundImage = `url('${theme.backgroundImageUrl || 'https://images.unsplash.com/photo-1550547660-d9450f859349?q=80&w=1965&auto=format&fit=crop'}')`;
+            pointsCounterEl.style.color = theme.accentColor;
+            nameLabel.style.color = theme.accentColor;
+            cardTitleEl.textContent = config.cardTitle || 'Estampillas';
+            addCustomPointsBtn.style.backgroundColor = theme.buttonColor;
+            pinInputs.forEach(input => input.style.setProperty('--tw-ring-color', theme.buttonColor));
+            customPointsInput.style.setProperty('--tw-ring-color', theme.buttonColor);
+        }
+
+        function prefetchCustomers(apiKey, programId) {
+            const urlParams = new URLSearchParams(window.location.search);
+            const emailToFind = urlParams.get('email');
+            if (!emailToFind) {
+                return Promise.reject(new Error('Falta el email del cliente en la URL.'));
+            }
+            const customersApiUrl = `https://pass.smartpasses.io/api/v1/loyalty/programs/${programId}/customers`;
+            return fetch(customersApiUrl, {
+                headers: { 'Content-Type': 'application/json', 'Authorization': apiKey }
+            }).then(response => {
+                if (!response.ok) throw new Error('No se pudo obtener la lista de clientes.');
+                return response.json();
+            });
+        }
+
+        function checkPin() {
+            const enteredPin = pinInputs.map(input => input.value).join('');
+            if (enteredPin.length === 4) {
+                if (enteredPin === businessConfig.staffPin) {
+                    loginScreen.classList.add('opacity-0');
+                    loginScreen.addEventListener('transitionend', () => {
+                        loginScreen.classList.add('hidden');
+                        mainContent.classList.remove('hidden');
+                        setTimeout(() => mainContent.classList.remove('opacity-0'), 50);
+                        setupCustomerView();
+                    }, { once: true });
+                } else {
+                    loginError.textContent = 'PIN Incorrecto';
+                    pinInputsContainer.classList.add('shake');
+                    pinInputs.forEach(input => input.value = '');
+                    setTimeout(() => {
+                        pinInputsContainer.classList.remove('shake');
+                        loginError.textContent = '';
+                    }, 1000);
+                    pinInputs[0].focus();
+                }
+            }
+        }
+
+        async function setupCustomerView() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const emailToFind = urlParams.get('email');
+            const firstName = urlParams.get('firstName') || 'Cliente';
+            const lastName = urlParams.get('lastName') || 'Ejemplo';
+            const pidNumber = urlParams.get('pidNumber') || '0000000000000';
+            currentStamps = parseInt(urlParams.get('points'), 10) || 0;
+
+            customerNameEl.textContent = `${firstName} ${lastName}`;
+            pidNumberEl.textContent = pidNumber.replace(/(\d{4})(\d{4})(\d{4})(\d{1})/, '$1 $2 $3 $4');
+            qrCodeImgEl.src = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${pidNumber}`;
+
+            try {
+                const customersData = await customersPromise;
+                const customers = customersData.data || customersData;
+                const foundCustomer = customers.find(c => c.email.toLowerCase() === emailToFind.toLowerCase());
+
+                if (foundCustomer) {
+                    customerId = foundCustomer.id;
+                    initialLoadingEl.classList.add('opacity-0', 'pointer-events-none');
+                    renderUI();
+                } else {
+                    initialLoadingMessageEl.textContent = `Error: No se encontró cliente con el email ${emailToFind}.`;
+                }
+            } catch (error) {
+                initialLoadingMessageEl.textContent = `Error: ${error.message}`;
+            }
+        }
+
+        function renderUI() {
+            pointsCounterEl.textContent = `${currentStamps}/${totalStamps}`;
+
+            stampsGrid.classList.remove('grid-cols-4', 'grid-cols-5', 'grid-cols-6');
+            if (totalStamps === 10) {
+                stampsGrid.classList.add('grid-cols-5');
+            } else if (totalStamps === 12) {
+                stampsGrid.classList.add('grid-cols-6');
+            } else { // for 8
+                stampsGrid.classList.add('grid-cols-4');
+            }
+
+            stampsGrid.innerHTML = ''; 
+            const iconSvg = businessConfig.theme.iconSvg || '<svg class="w-full h-full" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 2C16.9706 2 21 6.02944 21 11V12H3V11C3 6.02944 7.02944 2 12 2Z" fill="#FBBF24"></path></svg>';
+            for (let i = 0; i < totalStamps; i++) {
+                const stampEl = document.createElement('div');
+                stampEl.classList.add('stamp');
+                stampEl.innerHTML = iconSvg;
+                if (i >= currentStamps) stampEl.classList.add('stamp-unearned');
+                stampsGrid.appendChild(stampEl);
+            }
+            addPointBtn.disabled = currentStamps >= totalStamps;
+            addCustomPointsBtn.disabled = currentStamps >= totalStamps;
+            removePointBtn.disabled = currentStamps <= 0;
+        };
+
+        async function updatePointsOnServer(pointsToChange) {
+            if (!customerId) {
+                showNotification('Error: No se ha podido identificar al cliente.');
+                return false;
+            }
+            const apiUrl = `https://pass.smartpasses.io/api/v1/loyalty/programs/${businessConfig.programId}/customers/${customerId}/points/add`;
+            loadingModal.classList.remove('opacity-0', 'pointer-events-none');
+            [addPointBtn, removePointBtn, addCustomPointsBtn].forEach(btn => btn.disabled = true);
+            try {
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': businessConfig.apiKey },
+                    body: JSON.stringify({ points: pointsToChange })
+                });
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({ message: 'Error desconocido' }));
+                    throw new Error(errorData.message);
+                }
+                return true;
+            } catch (error) {
+                showNotification(`Error: ${error.message}`);
+                return false;
+            } finally {
+                loadingModal.classList.add('opacity-0', 'pointer-events-none');
+            }
+        }
+
+        async function sendMessageToCustomer(message) {
+             const messageApiUrl = `https://pass.smartpasses.io/api/v1/loyalty/programs/${businessConfig.programId}/customers/${customerId}/message`;
+            try {
+                await fetch(messageApiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': businessConfig.apiKey },
+                    body: JSON.stringify({ message })
+                });
+            } catch (error) { console.error("Error en la API de mensajes:", error); }
+        }
+
+        pinInputsContainer.addEventListener('input', (e) => {
+            const target = e.target;
+            if (target.value !== '' && target.nextElementSibling) {
+                target.nextElementSibling.focus();
+            }
+            checkPin();
+        });
+        pinInputsContainer.addEventListener('keyup', (e) => {
+            if ((e.key === 'Backspace' || e.key === 'Delete') && e.target.previousElementSibling) {
+                e.target.previousElementSibling.focus();
+            }
+        });
+
+        addPointBtn.addEventListener('click', async () => {
+            if (currentStamps < totalStamps) {
+                const success = await updatePointsOnServer(1);
+                if (success) {
+                    currentStamps++;
+                    renderUI();
+                    showNotification('¡Punto añadido con éxito!');
+                    await sendMessageToCustomer(`✅ Se añadió 1 punto con Exito`);
+                } else { renderUI(); }
+            }
+        });
+
+        removePointBtn.addEventListener('click', async () => {
+            if (currentStamps > 0) {
+                const success = await updatePointsOnServer(-1);
+                if (success) {
+                    currentStamps--;
+                    renderUI();
+                    showNotification('Punto eliminado con éxito.');
+                    await sendMessageToCustomer(`❌ Se ha eliminado 1 punto de tu tarjeta.`);
+                } else { renderUI(); }
+            }
+        });
+
+        addCustomPointsBtn.addEventListener('click', async () => {
+            const pointsToAdd = parseInt(customPointsInput.value, 10);
+            if (isNaN(pointsToAdd) || pointsToAdd <= 0) {
+                showNotification('Por favor, introduce un número válido.');
+                return;
+            }
+            if (currentStamps + pointsToAdd > totalStamps) {
+                showNotification(`No se pueden añadir ${pointsToAdd} puntos. El máximo es ${totalStamps}.`);
+                return;
+            }
+            const success = await updatePointsOnServer(pointsToAdd);
+            if (success) {
+                currentStamps += pointsToAdd;
+                renderUI();
+                const message = pointsToAdd === 1 ? `✅ Se añadió 1 punto con Exito` : `✅ Se añadieron ${pointsToAdd} puntos con Exito`;
+                showNotification(`¡${pointsToAdd} puntos añadidos con éxito!`);
+                await sendMessageToCustomer(message);
+                customPointsInput.value = '';
+            } else {
+                renderUI();
+            }
+        });
+
+        function showNotification(message) {
+            notificationMessage.textContent = message;
+            notificationModal.classList.remove('opacity-0', 'pointer-events-none');
+            setTimeout(() => {
+                notificationModal.classList.add('opacity-0', 'pointer-events-none');
+            }, 2500);
+        };
+    </script>
+</body>
+</html>
