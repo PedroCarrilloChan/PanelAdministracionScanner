@@ -176,7 +176,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, addDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, collection, addDoc, onSnapshot, doc, getDoc, deleteDoc, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyB_saB4ac0Vks7fmnuAeqEohsh64F2P1Rw",
@@ -285,17 +285,34 @@
                         accentColor: form.accentColor.value,
                         backgroundImageUrl: form.bgImageUrl.value,
                         iconSvg: form.iconSvg.value
-                    },
-                    createdAt: new Date()
+                    }
                 };
 
                 try {
-                    const docRef = await addDoc(collection(db, `/artifacts/${appId}/public/data/businesses`), businessData);
-                    showSystemModal("¡Éxito!", `El negocio "${businessData.name}" se guardó correctamente.`);
+                    const editingId = form.dataset.editingId;
+                    
+                    if (editingId) {
+                        // Modo edición
+                        const businessDocRef = doc(db, `/artifacts/${appId}/public/data/businesses`, editingId);
+                        businessData.updatedAt = new Date();
+                        await updateDoc(businessDocRef, businessData);
+                        showSystemModal("¡Éxito!", `El negocio "${businessData.name}" se actualizó correctamente.`);
+                        
+                        // Resetear modo edición
+                        delete form.dataset.editingId;
+                        saveButton.textContent = 'Guardar Negocio';
+                        saveButton.style.backgroundColor = form.buttonColor.value;
+                    } else {
+                        // Modo creación
+                        businessData.createdAt = new Date();
+                        const docRef = await addDoc(collection(db, `/artifacts/${appId}/public/data/businesses`), businessData);
+                        showSystemModal("¡Éxito!", `El negocio "${businessData.name}" se guardó correctamente.`);
+                    }
+                    
                     form.reset();
                     updatePreview();
                 } catch (error) {
-                    console.error("Error adding document: ", error);
+                    console.error("Error saving document: ", error);
                     showSystemModal("Error al Guardar", "No se pudo guardar el negocio en la base de datos. Revisa la consola para más detalles.");
                 }
             });
@@ -310,25 +327,86 @@
                 snapshot.docs.forEach(doc => {
                     const business = doc.data();
                     const businessEl = document.createElement('div');
-                    businessEl.className = 'glass-card p-3 rounded-lg flex justify-between items-center';
+                    businessEl.className = 'glass-card p-3 rounded-lg';
                     businessEl.innerHTML = `
-                        <span class="font-semibold">${business.name}</span>
-                        <button class="text-xs text-blue-400 hover:text-blue-300" data-id="${doc.id}">Copiar URL</button>
+                        <div class="flex justify-between items-center mb-2">
+                            <span class="font-semibold">${business.name}</span>
+                        </div>
+                        <div class="flex gap-2 justify-end">
+                            <button class="text-xs bg-blue-600 hover:bg-blue-700 text-white py-1 px-3 rounded-md transition-colors copy-url-btn" data-id="${doc.id}">Copiar URL</button>
+                            <button class="text-xs bg-yellow-600 hover:bg-yellow-700 text-white py-1 px-3 rounded-md transition-colors edit-btn" data-id="${doc.id}">Editar</button>
+                            <button class="text-xs bg-red-600 hover:bg-red-700 text-white py-1 px-3 rounded-md transition-colors delete-btn" data-id="${doc.id}">Eliminar</button>
+                        </div>
                     `;
                     businessListEl.appendChild(businessEl);
                 });
             });
 
-            businessListEl.addEventListener('click', (e) => {
+            businessListEl.addEventListener('click', async (e) => {
                 if (e.target.tagName === 'BUTTON') {
                     const businessId = e.target.dataset.id;
-                    const urlToCopy = `${window.location.origin}/tarjeta.html?businessId=${businessId}`;
-                    navigator.clipboard.writeText(urlToCopy).then(() => {
-                        showSystemModal("URL Copiada", `La URL para el negocio se ha copiado al portapapeles.\n\nRecuerda añadir el parámetro &email=... del cliente al final.`);
-                    }).catch(err => {
-                        showSystemModal("Error", "No se pudo copiar la URL al portapapeles.");
-                        console.error('Error al copiar:', err);
-                    });
+                    
+                    if (e.target.classList.contains('copy-url-btn')) {
+                        const urlToCopy = `${window.location.origin}/tarjeta.html?businessId=${businessId}&firstName=\${firstName}&lastName=\${lastName}&points=\${points}&pidNumber=\${pidNumber}&email=\${email}`;
+                        navigator.clipboard.writeText(urlToCopy).then(() => {
+                            showSystemModal("URL Copiada", `La URL con variables para el negocio se ha copiado al portapapeles.\n\nLas variables \${firstName}, \${lastName}, etc. deben ser reemplazadas con los datos reales del cliente.`);
+                        }).catch(err => {
+                            showSystemModal("Error", "No se pudo copiar la URL al portapapeles.");
+                            console.error('Error al copiar:', err);
+                        });
+                    } 
+                    else if (e.target.classList.contains('edit-btn')) {
+                        try {
+                            const businessDocRef = doc(db, `/artifacts/${appId}/public/data/businesses`, businessId);
+                            const businessDocSnap = await getDoc(businessDocRef);
+                            
+                            if (businessDocSnap.exists()) {
+                                const businessData = businessDocSnap.data();
+                                
+                                // Llenar el formulario con los datos existentes
+                                form.businessName.value = businessData.name || '';
+                                form.cardTitle.value = businessData.cardTitle || '';
+                                form.staffPin.value = businessData.staffPin || '';
+                                form.totalStamps.value = businessData.totalStamps || 8;
+                                form.apiKey.value = businessData.apiKey || '';
+                                form.programId.value = businessData.programId || '';
+                                form.buttonColor.value = businessData.theme?.buttonColor || '#0d6efd';
+                                form.accentColor.value = businessData.theme?.accentColor || '#ffc107';
+                                form.bgImageUrl.value = businessData.theme?.backgroundImageUrl || '';
+                                form.iconSvg.value = businessData.theme?.iconSvg || '';
+                                
+                                // Cambiar el comportamiento del formulario para editar
+                                form.dataset.editingId = businessId;
+                                saveButton.textContent = 'Actualizar Negocio';
+                                saveButton.style.backgroundColor = '#ffc107';
+                                
+                                updatePreview();
+                                showSystemModal("Modo Edición", `Ahora estás editando "${businessData.name}". Los cambios se guardarán cuando presiones "Actualizar Negocio".`);
+                                
+                                // Scroll al formulario
+                                document.querySelector('.glass-card').scrollIntoView({ behavior: 'smooth' });
+                            }
+                        } catch (error) {
+                            showSystemModal("Error", "No se pudo cargar los datos del negocio para editar.");
+                            console.error('Error al cargar negocio:', error);
+                        }
+                    }
+                    else if (e.target.classList.contains('delete-btn')) {
+                        // Buscar el nombre del negocio para la confirmación
+                        try {
+                            const businessDocRef = doc(db, `/artifacts/${appId}/public/data/businesses`, businessId);
+                            const businessDocSnap = await getDoc(businessDocRef);
+                            const businessName = businessDocSnap.exists() ? businessDocSnap.data().name : 'este negocio';
+                            
+                            if (confirm(`¿Estás seguro de que quieres eliminar "${businessName}"? Esta acción no se puede deshacer.`)) {
+                                await deleteDoc(businessDocRef);
+                                showSystemModal("Negocio Eliminado", `El negocio "${businessName}" ha sido eliminado correctamente.`);
+                            }
+                        } catch (error) {
+                            showSystemModal("Error", "No se pudo eliminar el negocio.");
+                            console.error('Error al eliminar negocio:', error);
+                        }
+                    }
                 }
             });
         });
